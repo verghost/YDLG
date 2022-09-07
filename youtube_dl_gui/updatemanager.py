@@ -19,7 +19,7 @@ from wx import CallAfter
 from wx.lib.pubsub import setuparg1
 from wx.lib.pubsub import pub as Publisher
 
-from .utils import (
+from utils import (
     YOUTUBEDL_BIN,
     check_path
 )

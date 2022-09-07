@@ -12,19 +12,41 @@ import wx
 import wx.combo
 from wx.lib.art import flagart
 
-from .utils import (
+from wx.lib.pubsub import pub as Publisher
+
+from updatemanager import (
+    UPDATE_PUB_TOPIC,
+    UpdateThread
+)
+
+from downloadmanager import (
+    MANAGER_PUB_TOPIC,
+    WORKER_PUB_TOPIC,
+    DownloadManager,
+    DownloadList,
+    DownloadItem
+)
+
+from utils import (
     TwoWayOrderedDict as twodict,
     os_path_exists,
     get_icon_file,
     os_sep
 )
 
-from .info import __appname__
+from info import __appname__
 
-from .formats import (
+from widgets import (
+    CustomComboBox,
+    ExtComboBox
+)
+
+from formats import (
+    DEFAULT_FORMATS,
     OUTPUT_FORMATS,
     VIDEO_FORMATS,
-    AUDIO_FORMATS
+    AUDIO_FORMATS,
+    FORMATS
 )
 #REFACTOR Move all formats, etc to formats.py
 
@@ -46,6 +68,7 @@ class OptionsFrame(wx.Frame):
         wx.Frame.__init__(self, parent, title=self.FRAME_TITLE, size=parent.opt_manager.options["opts_win_size"])
         self.opt_manager = parent.opt_manager
         self.log_manager = parent.log_manager
+        self.download_manager = parent.download_manager
         self.app_icon = None
 
         # Set the app icon
@@ -72,7 +95,9 @@ class OptionsFrame(wx.Frame):
             (GeneralTab(*tab_args), _("General")),
             (FormatsTab(*tab_args), _("Formats")),
             (DownloadsTab(*tab_args), _("Downloads")),
+            (SubtitlesTab(*tab_args), _("Subtitles")),
             (AdvancedTab(*tab_args), _("Advanced")),
+            (UpdateTab(*tab_args), _("Update")),
             (ExtraTab(*tab_args), _("Extra"))
         )
 
@@ -111,7 +136,7 @@ class OptionsFrame(wx.Frame):
         """Event handler for wx.EVT_CLOSE event."""
         self.save_all_options()
         #REFACTOR Parent create specific callback
-        self.GetParent()._update_videoformat_combobox()
+        #self.GetParent()._update_videoformat_combobox()
         self.Hide()
 
     def _on_reset(self, event):
@@ -177,6 +202,7 @@ class TabPanel(wx.Panel):
         #load_options(key)
         self.opt_manager = parent.opt_manager
         self.log_manager = parent.log_manager
+        self.download_manager = parent.download_manager
         self.app_icon = parent.app_icon
 
         self.reset_handler = parent.reset
@@ -465,15 +491,21 @@ class FormatsTab(TabPanel):
     def __init__(self, *args, **kwargs):
         super(FormatsTab, self).__init__(*args, **kwargs)
 
-        self.video_formats_label = self.crt_statictext(_("Video formats"))
-        self.video_formats_checklistbox = self.crt_checklistbox(list(VIDEO_FORMATS.values()))
+        self.video_format_label = self.crt_statictext(_("Video Format"))
+        self._videoformat_combobox = CustomComboBox(self, style=wx.CB_READONLY)
+        
+        self.audio_format_label = self.crt_statictext(_("Audio Format"))
+        self._audioformat_combobox = CustomComboBox(self, style=wx.CB_READONLY)
+        
+        #self.video_formats_label = self.crt_statictext(_("Video formats"))
+        #self.video_formats_checklistbox = self.crt_checklistbox(list(VIDEO_FORMATS.values()))
 
-        self.audio_formats_label = self.crt_statictext(_("Audio formats"))
-        self.audio_formats_checklistbox = self.crt_checklistbox(list(AUDIO_FORMATS.values()))
+        #self.audio_formats_label = self.crt_statictext(_("Audio formats"))
+        #self.audio_formats_checklistbox = self.crt_checklistbox(list(AUDIO_FORMATS.values()))
 
         self.post_proc_opts_label = self.crt_statictext(_("Post-Process options"))
         self.keep_video_checkbox = self.crt_checkbox(_("Keep original files"))
-        self.extract_audio_checkbox = self.crt_checkbox(_("Extract audio from video file"))
+        #self.extract_audio_checkbox = self.crt_checkbox(_("Extract audio from video file"))
         self.embed_thumbnail_checkbox = self.crt_checkbox(_("Embed thumbnail in audio file"))
         self.add_metadata_checkbox = self.crt_checkbox(_("Add metadata to file"))
 
@@ -486,15 +518,23 @@ class FormatsTab(TabPanel):
         main_sizer = wx.BoxSizer(wx.HORIZONTAL)
         vertical_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        vertical_sizer.Add(self.video_formats_label)
-        vertical_sizer.Add(self.video_formats_checklistbox, 1, wx.EXPAND | wx.ALL, border=5)
+        vertical_sizer.Add(self.audio_format_label)
+        vertical_sizer.Add(self._audioformat_combobox, flag=wx.EXPAND | wx.TOP, border=5)
+        vertical_sizer.AddSpacer((5, -1))
+        
+        vertical_sizer.Add(self.video_format_label)
+        vertical_sizer.Add(self._videoformat_combobox, flag=wx.EXPAND | wx.TOP, border=5)
+        vertical_sizer.AddSpacer((5, 1))
+        
+        #vertical_sizer.Add(self.video_formats_label)
+        #vertical_sizer.Add(self.video_formats_checklistbox, 1, wx.EXPAND | wx.ALL, border=5)
 
-        vertical_sizer.Add(self.audio_formats_label, flag=wx.TOP, border=5)
-        vertical_sizer.Add(self.audio_formats_checklistbox, 1, wx.EXPAND | wx.ALL, border=5)
+        #vertical_sizer.Add(self.audio_formats_label, flag=wx.TOP, border=5)
+        #vertical_sizer.Add(self.audio_formats_checklistbox, 1, wx.EXPAND | wx.ALL, border=5)
 
         vertical_sizer.Add(self.post_proc_opts_label, flag=wx.TOP, border=5)
         vertical_sizer.Add(self.keep_video_checkbox, flag=wx.ALL, border=5)
-        vertical_sizer.Add(self.extract_audio_checkbox, flag=wx.LEFT | wx.RIGHT | wx.BOTTOM, border=5)
+        #vertical_sizer.Add(self.extract_audio_checkbox, flag=wx.LEFT | wx.RIGHT | wx.BOTTOM, border=5)
         vertical_sizer.Add(self.embed_thumbnail_checkbox, flag=wx.LEFT | wx.RIGHT | wx.BOTTOM, border=5)
         vertical_sizer.Add(self.add_metadata_checkbox, flag=wx.LEFT | wx.RIGHT | wx.BOTTOM, border=5)
 
@@ -508,45 +548,103 @@ class FormatsTab(TabPanel):
         main_sizer.Add(vertical_sizer, 1, wx.EXPAND | wx.ALL, border=5)
         self.SetSizer(main_sizer)
 
+
+    def _update_audioformat_combobox(self):
+        self._audioformat_combobox.Clear()
+
+        self._audioformat_combobox.add_items(list(DEFAULT_FORMATS.values()), False)
+
+        aformats = []
+        for aformat in self.opt_manager.options["selected_audio_formats"]:
+            aformats.append(FORMATS[aformat])
+        
+        if aformats:
+            #self._audioformat_combobox.add_header(_("Audio"))
+            self._audioformat_combobox.add_items(aformats)
+
+        current_index = 0
+        current_format = self.opt_manager.options["audio_format"]
+        if current_format != "best":
+            current_index = self._audioformat_combobox.FindString(current_format)
+        #current_index = self._audioformat_combobox.FindString(FORMATS[self.opt_manager.options["selected_format"]])
+
+        if current_index == wx.NOT_FOUND:
+            self._audioformat_combobox.SetSelection(0)
+        else:
+            self._audioformat_combobox.SetSelection(current_index)
+
+        self._update_audioformat()
+
+    def _update_videoformat_combobox(self):
+        self._videoformat_combobox.Clear()
+
+        self._videoformat_combobox.add_items(list(DEFAULT_FORMATS.values()), False)
+
+        vformats = []
+        for vformat in self.opt_manager.options["selected_video_formats"]:
+            vformats.append(FORMATS[vformat])
+        
+        if vformats:
+            #self._videoformat_combobox.add_header(_("Video"))
+            self._videoformat_combobox.add_items(vformats)
+
+        current_index = self._videoformat_combobox.FindString(FORMATS[self.opt_manager.options["selected_format"]])
+
+        if current_index == wx.NOT_FOUND:
+            self._videoformat_combobox.SetSelection(0)
+        else:
+            self._videoformat_combobox.SetSelection(current_index)
+
+        self._update_videoformat()
+
+    def _update_audioformat(self):
+        self.opt_manager.options["selected_format"] = selected_format = FORMATS[self._audioformat_combobox.GetValue()]
+
+        if selected_format in AUDIO_FORMATS:
+            self.opt_manager.options["audio_format"] = selected_format
+        else:
+            self.opt_manager.options["audio_format"] = "best"
+    
+    def _update_videoformat(self):
+        self.opt_manager.options["selected_format"] = selected_format = FORMATS[self._videoformat_combobox.GetValue()]
+
+        if selected_format in VIDEO_FORMATS:
+            self.opt_manager.options["video_format"] = selected_format
+        else:
+            self.opt_manager.options["video_format"] = DEFAULT_FORMATS[_("default")]
+
     def load_options(self):
-        checked_video_formats = [VIDEO_FORMATS[vformat] for vformat in self.opt_manager.options["selected_video_formats"]]
-        self.video_formats_checklistbox.SetCheckedStrings(checked_video_formats)
-        checked_audio_formats = [AUDIO_FORMATS[aformat] for aformat in self.opt_manager.options["selected_audio_formats"]]
-        self.audio_formats_checklistbox.SetCheckedStrings(checked_audio_formats)
+        self._update_audioformat_combobox()
+        self._update_videoformat_combobox()
+        
+        #checked_video_formats = [VIDEO_FORMATS[vformat] for vformat in self.opt_manager.options["selected_video_formats"]]
+        #self.video_formats_checklistbox.SetCheckedStrings(checked_video_formats)
+        #checked_audio_formats = [AUDIO_FORMATS[aformat] for aformat in self.opt_manager.options["selected_audio_formats"]]
+        #self.audio_formats_checklistbox.SetCheckedStrings(checked_audio_formats)
+        
         self.keep_video_checkbox.SetValue(self.opt_manager.options["keep_video"])
         self.audio_quality_combobox.SetValue(self.AUDIO_QUALITY[self.opt_manager.options["audio_quality"]])
-        self.extract_audio_checkbox.SetValue(self.opt_manager.options["to_audio"])
+        #self.extract_audio_checkbox.SetValue(self.opt_manager.options["to_audio"])
         self.embed_thumbnail_checkbox.SetValue(self.opt_manager.options["embed_thumbnail"])
         self.add_metadata_checkbox.SetValue(self.opt_manager.options["add_metadata"])
 
     def save_options(self):
-        checked_video_formats = [VIDEO_FORMATS[vformat] for vformat in self.video_formats_checklistbox.GetCheckedStrings()]
-        self.opt_manager.options["selected_video_formats"] = checked_video_formats
-        checked_audio_formats = [AUDIO_FORMATS[aformat] for aformat in self.audio_formats_checklistbox.GetCheckedStrings()]
-        self.opt_manager.options["selected_audio_formats"] = checked_audio_formats
+        self._update_audioformat()
+        self._update_videoformat()
+        
+        #checked_video_formats = [VIDEO_FORMATS[vformat] for vformat in self.video_formats_checklistbox.GetCheckedStrings()]
+        #self.opt_manager.options["selected_video_formats"] = checked_video_formats
+        #checked_audio_formats = [AUDIO_FORMATS[aformat] for aformat in self.audio_formats_checklistbox.GetCheckedStrings()]
+        #self.opt_manager.options["selected_audio_formats"] = checked_audio_formats
+        
         self.opt_manager.options["keep_video"] = self.keep_video_checkbox.GetValue()
         self.opt_manager.options["audio_quality"] = self.AUDIO_QUALITY[self.audio_quality_combobox.GetValue()]
-        self.opt_manager.options["to_audio"] = self.extract_audio_checkbox.GetValue()
+        #self.opt_manager.options["to_audio"] = self.extract_audio_checkbox.GetValue()
         self.opt_manager.options["embed_thumbnail"] = self.embed_thumbnail_checkbox.GetValue()
         self.opt_manager.options["add_metadata"] = self.add_metadata_checkbox.GetValue()
 
 
-class DownloadsTab(TabPanel):
-
-    # Lang code = ISO 639-1
-    SUBS_LANG = twodict([
-        ("en", _("English")),
-        ("fr", _("French")),
-        ("de", _("German")),
-        ("el", _("Greek")),
-        ("he", _("Hebrew")),
-        ("it", _("Italian")),
-        ("pt", _("Portuguese")),
-        ("ru", _("Russian")),
-        ("es", _("Spanish")),
-        ("sv", _("Swedish")),
-        ("tr", _("Turkish"))
-    ])
+class DownloadsTab(TabPanel): 
 
     FILESIZES = twodict([
         ("", "Bytes"),
@@ -560,22 +658,20 @@ class DownloadsTab(TabPanel):
         ("y", "Yottabytes")
     ])
 
-    SUBS_CHOICES = [
-        _("None"),
-        _("Automatic subtitles (YOUTUBE ONLY)"),
-        _("All available subtitles"),
-        _("Subtitles by language")
-    ]
-
     def __init__(self, *args, **kwargs):
         super(DownloadsTab, self).__init__(*args, **kwargs)
 
-        self.subtitles_label = self.crt_statictext(_("Subtitles"))
-        self.subtitles_combobox = self.crt_combobox(self.SUBS_CHOICES, event_handler=self._on_subtitles)
-        self.subtitles_lang_listbox = self.crt_listbox(list(self.SUBS_LANG.values()))
+        # Download directory settings
+        self._save_path_label = self.crt_statictext("Download Directory")
+        self._path_combobox = ExtComboBox(self, 5, style=wx.CB_READONLY)
+        self._save_path_button = wx.Button(self, size=(35, -1))
+        self._path_combobox.LoadMultiple(self.opt_manager.options["save_path_dirs"])
+        self._path_combobox.SetValue(self.opt_manager.options["save_path"])
+        self._save_path_button.SetLabel("...")
+        self._save_path_button.Bind(wx.EVT_BUTTON, self._on_savepath)
+        self.Bind(wx.EVT_TEXT, self._update_savepath, self._path_combobox)
+        
 
-        self.subtitles_opts_label = self.crt_statictext(_("Subtitles options"))
-        self.embed_subs_checkbox = self.crt_checkbox(_("Embed subtitles into video file (mp4 ONLY)"))
 
         self.playlist_box = self.crt_staticbox(_("Playlist"))
 
@@ -601,12 +697,12 @@ class DownloadsTab(TabPanel):
         main_sizer = wx.BoxSizer(wx.HORIZONTAL)
         vertical_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        vertical_sizer.Add(self.subtitles_label)
-        vertical_sizer.Add(self.subtitles_combobox, flag=wx.EXPAND | wx.ALL, border=5)
-        vertical_sizer.Add(self.subtitles_lang_listbox, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=5)
-
-        vertical_sizer.Add(self.subtitles_opts_label, flag=wx.TOP, border=5)
-        vertical_sizer.Add(self.embed_subs_checkbox, flag=wx.ALL, border=5)
+        pathbox_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        vertical_sizer.Add(self._save_path_label, 0, wx.TOP | wx.ALIGN_LEFT)
+        pathbox_sizer.Add(self._path_combobox, 1, wx.ALIGN_CENTER_VERTICAL)
+        pathbox_sizer.AddSpacer((1, -1))
+        pathbox_sizer.Add(self._save_path_button, 0, wx.ALIGN_CENTER_VERTICAL)
+        vertical_sizer.Add(pathbox_sizer, 0, wx.EXPAND | wx.TOP | wx.BOTTOM, border=1)
 
         plist_and_fsize_sizer = wx.BoxSizer(wx.HORIZONTAL)
         plist_and_fsize_sizer.Add(self._build_playlist_sizer(), 1, wx.EXPAND)
@@ -615,7 +711,7 @@ class DownloadsTab(TabPanel):
 
         vertical_sizer.Add(plist_and_fsize_sizer, 1, wx.EXPAND | wx.TOP, border=5)
 
-        main_sizer.Add(vertical_sizer, 1, wx.EXPAND | wx.ALL, border=5)
+        main_sizer.Add(vertical_sizer, 1, wx.ALL, border=5)
         self.SetSizer(main_sizer)
 
     def _build_playlist_sizer(self):
@@ -655,24 +751,25 @@ class DownloadsTab(TabPanel):
         filesize_box_sizer.Add(border, flag=wx.ALIGN_CENTER)
 
         return filesize_box_sizer
+    
+    def _update_savepath(self, event):
+        self.opt_manager.options["save_path"] = self._path_combobox.GetValue()
+    
+    def _on_savepath(self, event):
+        dlg = wx.DirDialog(self, _("Choose Directory"), self._path_combobox.GetStringSelection())
 
-    def _on_subtitles(self, event):
-        """Event handler for the wx.EVT_COMBOBOX of the subtitles_combobox."""
-        self.subtitles_lang_listbox.Enable(self.subtitles_combobox.GetValue() == self.SUBS_CHOICES[-1])
+        if dlg.ShowModal() == wx.ID_OK:
+            path = dlg.GetPath()
+
+            self._path_combobox.Append(path)
+            self._path_combobox.SetValue(path)
+            self._update_savepath(None)
+
+        dlg.Destroy()
 
     def load_options(self):
-        #NOTE Find a better way to do this
-        if self.opt_manager.options["write_subs"]:
-            self.subtitles_combobox.SetValue(self.SUBS_CHOICES[3])
-        elif self.opt_manager.options["write_all_subs"]:
-            self.subtitles_combobox.SetValue(self.SUBS_CHOICES[2])
-        elif self.opt_manager.options["write_auto_subs"]:
-            self.subtitles_combobox.SetValue(self.SUBS_CHOICES[1])
-        else:
-            self.subtitles_combobox.SetValue(self.SUBS_CHOICES[0])
-
-        self.subtitles_lang_listbox.SetStringSelection(self.SUBS_LANG[self.opt_manager.options["subs_lang"]])
-        self.embed_subs_checkbox.SetValue(self.opt_manager.options["embed_subs"])
+        self._path_combobox.LoadMultiple(self.opt_manager.options["save_path_dirs"])
+        self._path_combobox.SetValue(self.opt_manager.options["save_path"])
         self.playlist_start_spinctrl.SetValue(self.opt_manager.options["playlist_start"])
         self.playlist_stop_spinctrl.SetValue(self.opt_manager.options["playlist_end"])
         self.playlist_max_spinctrl.SetValue(self.opt_manager.options["max_downloads"])
@@ -681,29 +778,8 @@ class DownloadsTab(TabPanel):
         self.filesize_min_sizeunit_combobox.SetValue(self.FILESIZES[self.opt_manager.options["min_filesize_unit"]])
         self.filesize_max_sizeunit_combobox.SetValue(self.FILESIZES[self.opt_manager.options["max_filesize_unit"]])
 
-        self._on_subtitles(None)
-
     def save_options(self):
-        subs_choice = self.SUBS_CHOICES.index(self.subtitles_combobox.GetValue())
-        if subs_choice == 1:
-            self.opt_manager.options["write_subs"] = False
-            self.opt_manager.options["write_all_subs"] = False
-            self.opt_manager.options["write_auto_subs"] = True
-        elif subs_choice == 2:
-            self.opt_manager.options["write_subs"] = False
-            self.opt_manager.options["write_all_subs"] = True
-            self.opt_manager.options["write_auto_subs"] = False
-        elif subs_choice == 3:
-            self.opt_manager.options["write_subs"] = True
-            self.opt_manager.options["write_all_subs"] = False
-            self.opt_manager.options["write_auto_subs"] = False
-        else:
-            self.opt_manager.options["write_subs"] = False
-            self.opt_manager.options["write_all_subs"] = False
-            self.opt_manager.options["write_auto_subs"] = False
-
-        self.opt_manager.options["subs_lang"] = self.SUBS_LANG[self.subtitles_lang_listbox.GetStringSelection()]
-        self.opt_manager.options["embed_subs"] = self.embed_subs_checkbox.GetValue()
+        self.opt_manager.options["save_path_dirs"] = self._path_combobox.GetStrings()
         self.opt_manager.options["playlist_start"] = self.playlist_start_spinctrl.GetValue()
         self.opt_manager.options["playlist_end"] = self.playlist_stop_spinctrl.GetValue()
         self.opt_manager.options["max_downloads"] = self.playlist_max_spinctrl.GetValue()
@@ -849,6 +925,97 @@ class AdvancedTab(TabPanel):
         self.opt_manager.options["referer"] = self.referer_textctrl.GetValue()
         self.opt_manager.options["enable_log"] = self.enable_log_checkbox.GetValue()
 
+class SubtitlesTab(TabPanel):
+    
+    # Lang code = ISO 639-1
+    SUBS_LANG = twodict([
+        ("en", _("English")),
+        ("fr", _("French")),
+        ("de", _("German")),
+        ("el", _("Greek")),
+        ("he", _("Hebrew")),
+        ("it", _("Italian")),
+        ("pt", _("Portuguese")),
+        ("ru", _("Russian")),
+        ("es", _("Spanish")),
+        ("sv", _("Swedish")),
+        ("tr", _("Turkish"))
+    ])
+
+    SUBS_CHOICES = [
+        _("None"),
+        _("Automatic subtitles (YOUTUBE ONLY)"),
+        _("All available subtitles"),
+        _("Subtitles by language")
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super(SubtitlesTab, self).__init__(*args, **kwargs)
+
+        self.subtitles_label = self.crt_statictext(_("Subtitles"))
+        self.subtitles_combobox = self.crt_combobox(self.SUBS_CHOICES, event_handler=self._on_subtitles)
+        self.subtitles_lang_listbox = self.crt_listbox(list(self.SUBS_LANG.values()))
+
+        self.subtitles_opts_label = self.crt_statictext(_("Subtitles options"))
+        self.embed_subs_checkbox = self.crt_checkbox(_("Embed subtitles into video file (mp4 ONLY)"))
+
+        self._set_layout()
+
+    def _set_layout(self):
+        main_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        vertical_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        vertical_sizer.Add(self.subtitles_label)
+        vertical_sizer.Add(self.subtitles_combobox, flag=wx.EXPAND | wx.ALL, border=5)
+        vertical_sizer.Add(self.subtitles_lang_listbox, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=5)
+
+        vertical_sizer.Add(self.subtitles_opts_label, flag=wx.TOP, border=5)
+        vertical_sizer.Add(self.embed_subs_checkbox, flag=wx.ALL, border=5)
+
+        main_sizer.Add(vertical_sizer, 1, wx.EXPAND | wx.ALL, border=5)
+        self.SetSizer(main_sizer)
+    
+    def _on_subtitles(self, event):
+        """Event handler for the wx.EVT_COMBOBOX of the subtitles_combobox."""
+        self.subtitles_lang_listbox.Enable(self.subtitles_combobox.GetValue() == self.SUBS_CHOICES[-1])
+
+    def load_options(self):
+        #NOTE Find a better way to do this
+        if self.opt_manager.options["write_subs"]:
+            self.subtitles_combobox.SetValue(self.SUBS_CHOICES[3])
+        elif self.opt_manager.options["write_all_subs"]:
+            self.subtitles_combobox.SetValue(self.SUBS_CHOICES[2])
+        elif self.opt_manager.options["write_auto_subs"]:
+            self.subtitles_combobox.SetValue(self.SUBS_CHOICES[1])
+        else:
+            self.subtitles_combobox.SetValue(self.SUBS_CHOICES[0])
+
+        self.subtitles_lang_listbox.SetStringSelection(self.SUBS_LANG[self.opt_manager.options["subs_lang"]])
+        self.embed_subs_checkbox.SetValue(self.opt_manager.options["embed_subs"])
+
+        self._on_subtitles(None)
+
+    def save_options(self):
+        subs_choice = self.SUBS_CHOICES.index(self.subtitles_combobox.GetValue())
+        if subs_choice == 1:
+            self.opt_manager.options["write_subs"] = False
+            self.opt_manager.options["write_all_subs"] = False
+            self.opt_manager.options["write_auto_subs"] = True
+        elif subs_choice == 2:
+            self.opt_manager.options["write_subs"] = False
+            self.opt_manager.options["write_all_subs"] = True
+            self.opt_manager.options["write_auto_subs"] = False
+        elif subs_choice == 3:
+            self.opt_manager.options["write_subs"] = True
+            self.opt_manager.options["write_all_subs"] = False
+            self.opt_manager.options["write_auto_subs"] = False
+        else:
+            self.opt_manager.options["write_subs"] = False
+            self.opt_manager.options["write_all_subs"] = False
+            self.opt_manager.options["write_auto_subs"] = False
+
+        self.opt_manager.options["subs_lang"] = self.SUBS_LANG[self.subtitles_lang_listbox.GetStringSelection()]
+        self.opt_manager.options["embed_subs"] = self.embed_subs_checkbox.GetValue()
 
 class ExtraTab(TabPanel):
 
@@ -909,6 +1076,135 @@ class ExtraTab(TabPanel):
         self.opt_manager.options["native_hls"] = self.native_hls_checkbox.GetValue()
         self.opt_manager.options["nomtime"] = self.no_mtime_checkbox.GetValue()
 
+
+class UpdateTab(TabPanel):
+
+    INFO_LABEL = _("Info")
+    WARNING_LABEL = _("Warning")
+    
+    UPDATE_ACTIVE = _("Update already in progress")
+    DOWNLOAD_ACTIVE = _("Download in progress. Please wait for all downloads to complete")
+
+    UPDATING_MSG = _("Downloading...")
+    UPDATE_ERR_MSG = _("Failed [{0}]")
+    UPDATE_SUCC_MSG = _("Success!")
+
+    def __init__(self, *args, **kwargs):
+        super(UpdateTab, self).__init__(*args, **kwargs)
+
+        self.update_thread = None
+
+        #self.last_update_label = self.crt_statictext(_("Last Update of youtube-dl Binary"))
+        #self.last_update_date = self.crt_statictext(_("TEST DATE"))
+        
+        self.update_label = self.crt_statictext(_("Perform Update"))
+        self.update_status_label = self.crt_statictext(_("Status: Idle"))
+
+        self.update_button = self.crt_button(_("Update"), self._on_update)
+
+        self._set_publisher(self._update_handler, UPDATE_PUB_TOPIC)
+
+        self._set_layout()
+
+    def _set_layout(self):
+        main_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        vertical_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # Last Update
+        '''vertical_sizer.Add(self.last_update_label, flag=wx.TOP, border=10)
+        last_update_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        last_update_sizer.Add(self.update_status_label)
+        last_update_sizer.AddSpacer((-1, -1), 1)
+        last_update_sizer.Add(self.update_button)
+        vertical_sizer.Add(last_update_sizer, flag=wx.EXPAND | wx.ALL, border=5)'''
+
+        # Perform Update
+        vertical_sizer.Add(self.update_label, flag=wx.TOP)
+        
+        do_update_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        do_update_sizer.Add(self.update_button, flag=wx.ALIGN_RIGHT | wx.RIGHT , border=10)
+        do_update_sizer.AddSpacer((-1, -1), 1)
+        do_update_sizer.Add(self.update_status_label, flag=wx.ALIGN_RIGHT | wx.TOP, border=5)
+        vertical_sizer.Add(do_update_sizer, flag=wx.ALIGN_LEFT | wx.TOP, border=5)
+        
+        
+
+        main_sizer.Add(vertical_sizer, 1, wx.ALL, border=5)
+        self.SetSizer(main_sizer)
+    
+    def _create_popup(self, text, title, style):
+        wx.MessageBox(text, title, style)
+    
+    def _on_update(self, event):
+        """Event handler of the self._update_btn widget.
+
+        This method is used when the update button is pressed to start
+        the update process.
+
+        Note:
+            Currently there is not way to stop the update process.
+
+        """
+        if self.opt_manager.options["disable_update"]:
+            self._create_popup(_("Updates are disabled for your system. Please use the system's package manager to update youtube-dl."),
+                               self.INFO_LABEL,
+                               wx.OK | wx.ICON_INFORMATION)
+        else:
+            self._update_youtubedl()
+
+    def _update_youtubedl(self):
+        """Update youtube-dl binary to the latest version. """
+        if self.download_manager is not None and self.download_manager.is_alive():
+            self._create_popup(self.DOWNLOAD_ACTIVE,
+                               self.WARNING_LABEL,
+                               wx.OK | wx.ICON_EXCLAMATION)
+        elif self.update_thread is not None and self.update_thread.is_alive():
+            self._create_popup(self.UPDATE_ACTIVE,
+                               self.INFO_LABEL,
+                               wx.OK | wx.ICON_INFORMATION)
+        else:
+            self.update_thread = UpdateThread(self.opt_manager.options['youtubedl_path'])
+    
+    def _update_handler(self, msg):
+        """updatemanager.UpdateThread thread handler.
+
+        Handles messages from the UpdateThread thread.
+
+        Args:
+            See updatemanager.UpdateThread _talk_to_gui() method.
+
+        """
+        data = msg.data
+
+        if data[0] == 'download':
+            self.update_status_label.SetLabel("Status: " + self.UPDATING_MSG)
+        elif data[0] == 'error':
+           self.update_status_label.SetLabel("Status: " + self.UPDATE_ERR_MSG.format(data[1]))
+        elif data[0] == 'correct':
+            self.update_status_label.SetLabel("Status: " + self.UPDATE_SUCC_MSG)
+        else:
+            self.update_status_label.SetLabel(_("Status: Idle"))
+            self.update_thread = None
+
+    def _set_publisher(self, handler, topic):
+        """Sets a handler for the given topic.
+
+        Args:
+            handler (function): Can be any function with one parameter
+                the message that the caller sends.
+
+            topic (string): Can be any string that identifies the caller.
+                You can bind multiple handlers on the same topic or
+                multiple topics on the same handler.
+
+        """
+        Publisher.subscribe(handler, topic)
+
+    def load_options(self):
+        pass
+
+    def save_options(self):
+        pass
 
 class LogGUI(wx.Frame):
 

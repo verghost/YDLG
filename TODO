@@ -1,3 +1,47 @@
+## A New Goal: Make a MediaHuman-style converter that utilizes youtube-dl and/or yt-dlp(https://github.com/yt-dlp/yt-dlp)
+
+
+Added
+=====
+* Two step download process:
+    * Step 1 - Once the "add" button is pressed, title, thumbnail and other data is grabbed and displays the items to be downloaded.
+    * Step 2 - The user clicks the start button and then the files begin downloading.
+* Update happens in settings instead of from main frame.
+* Adding URLs now works by pasting from the clipboard instead of pasting into one text box then adding to the list.
+* Options button changed to conform to the rest of the buttons.
+* RC menu changed to remove "re-enter" and add "Start", "Remove" and "Refresh".
+* Total UI scaleback to more resemble mediahuman (i.e. move dl directory as well as format settings to optionsframe).
+
+Additional fixes/features
+=========================
+* Simplify:
+    * There's no need to maintain the sequence between the download list and the listctrl, so get rid of that functionality. This will allow us to assign an options manager instance to each download item. By doing this we can postpone the option parsing until the download starts.
+    * Split functionality into video or audio downloading (the above step is critical in this).
+* Fix CustomComboxBox: huge blank space at the end of the list.
+* Bug: Date Modified changed to some time in 2018?
+* Issue: Update tab in options doesn't check for active downloads.
+* Bug: Sometimes downloads things twice (doesn't seem to happen in the clean version so it's probably my code).
+* Fix playlist downloads; this one only downloads four videos for some reason: https://www.youtube.com/playlist?list=PLAHjFR6-vI1yjWJJAXtmI7ibGmZ7K0r6W
+* New icons (start button shouldn't be a cloud, add button should be a '+')?
+* Add Options: Last update time, Last update status (success or nah), Option to update on startup if a certain amount of time has passed.
+* Complete individual downloads:
+    * What happens when we are downloading one or more single items and then the user presses the "download all" button?
+    * Test a bunch of simultaneous individual downloads (is DownloadManager resource intesive, also how does python2 manage discarded temp DownloadList objects?)
+    * Any efficiency to be gained from writign a custom individual downloader class the cuts the fluff and interfaces with a singe worker?
+        * Also, this feature might warrant a rewrite of a lot of download manager code
+* Add default image that appears before real thumbnail is fetched.
+* Don't delete the downloaded items from the list; allow the user to see the completed items, with options to delete all or individual items.
+* Add open containing folder option? Maybe even an option that auto-selects an individual file (right click item > "Open Contianing Folder").
+* Move Directory and Updates to settings/options.
+* Only show exit dialogue if downloads are active; change text to match.
+* Add global default audio and video format setting.
+* In addition to the percentage, a progress bar; perhaps a progress bar with percentage overlayed.
+* Clean up: 
+    * Make the naming scheme uniform for variables and funcitons (is it _name or name?).
+    * Delete all commented code.
+    * Remove any code that isn't being used.
+* Update to Python3 and wxPython4.
+
 Release 0.4.1
 =============
 * Intergrity check youtube-dl bin

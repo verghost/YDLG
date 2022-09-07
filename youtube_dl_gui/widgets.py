@@ -259,6 +259,32 @@ class ListBoxPopup(wx.PopupTransientWindow):
         #self.__listbox.SetStringSelection(string)
 
 
+class ExtComboBox(wx.ComboBox):
+
+    def __init__(self, parent, max_items=-1, *args, **kwargs):
+        super(ExtComboBox, self).__init__(parent, *args, **kwargs)
+
+        assert max_items > 0 or max_items == -1
+        self.max_items = max_items
+
+    def Append(self, new_value):
+        if self.FindString(new_value) == wx.NOT_FOUND:
+            super(ExtComboBox, self).Append(new_value)
+
+            if self.max_items != -1 and self.GetCount() > self.max_items:
+                self.SetItems(self.GetStrings()[1:])
+
+    def SetValue(self, new_value):
+        if self.FindString(new_value) == wx.NOT_FOUND:
+            self.Append(new_value)
+
+        self.SetSelection(self.FindString(new_value))
+
+    def LoadMultiple(self, items_list):
+        for item in items_list:
+            self.Append(item)
+
+
 class CustomComboBox(wx.Panel):
 
     """Custom combobox.

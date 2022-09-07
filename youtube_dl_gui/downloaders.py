@@ -21,7 +21,7 @@ from time import sleep
 from Queue import Queue
 from threading import Thread
 
-from .utils import convert_item
+from utils import convert_item
 
 
 class PipeReader(Thread):
@@ -134,8 +134,41 @@ class YoutubeDLDownloader(object):
         self._return_code = self.OK
         self._proc = None
 
+        self._stdout_queue = Queue()
+        self._stdout_reader = PipeReader(self._stdout_queue)
+
         self._stderr_queue = Queue()
         self._stderr_reader = PipeReader(self._stderr_queue)
+
+    def raw_download(self, url, options, last):
+        '''Called by InstaFetcher, sends raw data back instead of doing parsing here.
+
+        Args:
+            url (string): URL string to download.
+            options (list): Python list that contains youtube-dl options.
+        '''
+        cmd = self._get_cmd(url, options)
+        self._create_process(cmd)
+
+        if self._proc is not None:
+            #self._stdout_reader.attach_filedescriptor(self._proc.stdout)
+            self._stderr_reader.attach_filedescriptor(self._proc.stderr)
+
+        while self._proc_is_alive():
+            stdout = self._proc.stdout.readline().rstrip()
+            if not stdout == "":
+                self.data_hook(stdout)
+
+        # Read stderr after download process has been completed
+        # We don't need to read stderr in real time
+        while not self._stderr_queue.empty():
+            stderr = self._stderr_queue.get_nowait().rstrip()
+            if not stderr == "":
+                self.data_hook(stderr)
+        
+        if last is not None:
+            last()
+        return self.OK
 
     def download(self, url, options):
         """Download url using given options.

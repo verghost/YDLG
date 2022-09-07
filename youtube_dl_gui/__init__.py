@@ -29,8 +29,8 @@ except ImportError as error:
 __packagename__ = "youtube_dl_gui"
 
 # For package use
-from .version import __version__
-from .info import (
+from version import __version__
+from info import (
     __author__,
     __appname__,
     __contact__,
@@ -42,12 +42,12 @@ from .info import (
 )
 
 gettext.install(__packagename__)
-from .formats import reload_strings
+from formats import reload_strings
 
-from .logmanager import LogManager
-from .optionsmanager import OptionsManager
+from logmanager import LogManager
+from optionsmanager import OptionsManager
 
-from .utils import (
+from utils import (
     get_config_path,
     get_locale_file,
     os_path_exists,
@@ -76,7 +76,7 @@ except IOError:
 
 reload_strings()
 
-from .mainframe import MainFrame
+from mainframe import MainFrame
 
 
 def main():

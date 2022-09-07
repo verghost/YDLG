@@ -25,8 +25,8 @@ except ImportError as error:
     print error
     sys.exit(1)
 
-from .info import __appname__
-from .version import __version__
+from info import __appname__
+from version import __version__
 
 
 _RANDOM_OBJECT = object()
@@ -40,6 +40,8 @@ if os.name == 'nt':
 FILESIZE_METRICS = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"]
 
 KILO_SIZE = 1024.0
+
+THUMBNAIL_SIZE = [64, 32]
 
 
 def get_encoding():

@@ -8,7 +8,7 @@ from __future__ import unicode_literals
 import os.path
 from time import strftime
 
-from .utils import (
+from utils import (
     os_path_exists,
     get_encoding,
     check_path

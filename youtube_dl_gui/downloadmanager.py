@@ -24,26 +24,36 @@ from __future__ import unicode_literals
 import time
 import os.path
 
+import json
+import tempfile
+
+from PIL import Image
+
 from threading import (
     Thread,
     RLock,
     Lock
 )
 
+from urllib2 import urlopen, URLError, HTTPError
+
 from wx import CallAfter
+from wx import Bitmap
 from wx.lib.pubsub import setuparg1
 from wx.lib.pubsub import pub as Publisher
 
-from .parsers import OptionsParser
-from .updatemanager import UpdateThread
-from .downloaders import YoutubeDLDownloader
+from parsers import OptionsParser
+from updatemanager import UpdateThread
+from downloaders import YoutubeDLDownloader
 
-from .utils import (
+from utils import (
     YOUTUBEDL_BIN,
+    THUMBNAIL_SIZE,
     os_path_exists,
     format_bytes,
     to_string,
-    to_bytes
+    to_bytes,
+    convert_item
 )
 
 
@@ -95,6 +105,7 @@ class DownloadItem(object):
     def __init__(self, url, options):
         self.url = url
         self.options = options
+        self.index = None
         self.object_id = hash(url + to_string(options))
 
         self.reset()
@@ -223,7 +234,6 @@ class DownloadItem(object):
         return self.object_id == other.object_id
 
 
-
 class DownloadList(object):
 
     """List like data structure that contains DownloadItems.
@@ -324,7 +334,8 @@ class DownloadList(object):
     @synchronized(_SYNC_LOCK)
     def get_items(self):
         """Returns a list with all the items."""
-        return [self._items_dict[object_id] for object_id in self._items_list]
+        #return [self._items_dict[object_id] for object_id in self._items_list]
+        return self._items_dict.values()
 
     @synchronized(_SYNC_LOCK)
     def change_stage(self, object_id, new_stage):
@@ -335,7 +346,8 @@ class DownloadList(object):
     def index(self, object_id):
         """Get the zero based index of the item with the given object_id."""
         if object_id in self._items_list:
-            return self._items_list.index(object_id)
+            #return self._items_list.index(object_id)
+            return self._items_dict[object_id].index
         return -1
 
     @synchronized(_SYNC_LOCK)
@@ -596,8 +608,9 @@ class Worker(Thread):
     def run(self):
         while self._running:
             if self._data['url'] is not None:
-                #options = self._options_parser.parse(self.opt_manager.options)
-                ret_code = self._downloader.download(self._data['url'], self._options)
+                options = self._options_parser.parse(self._options)
+                #print options
+                ret_code = self._downloader.download(self._data['url'], options)
 
                 if (ret_code == YoutubeDLDownloader.OK or
                         ret_code == YoutubeDLDownloader.ALREADY or
@@ -756,4 +769,132 @@ class Worker(Thread):
             self._wait_for_reply = True
 
         CallAfter(Publisher.sendMessage, WORKER_PUB_TOPIC, (signal, data))
+
+
+class Fetcher(Thread):
+    '''Manages the fworkers, limiting creation when expanding playlists.
+    '''
+
+    WAIT_TIME = 0.1
+
+    def __init__(self, youtubedl, data_hook, max_fw, log_manager=None):
+        super(Fetcher, self).__init__()
+        self.log_manager = log_manager
+
+        self._running = True
+        self._queue = list()
+        self._fworkers = {}
+        self._youtubedl = youtubedl
+        self._data_hook = data_hook
+        self._max_fw = max_fw
+
+        self.start()
+    
+    def run(self):
+        while self._running:
+            if len(self._queue) > 0 and len(self._fworkers) < self._max_fw:
+                url, index, object_id = self._queue.pop(0)
+                self._fworkers[index] = FWorker(self._data_hook, self._hook, self._youtubedl, url, index, object_id)
+            time.sleep(self.WAIT_TIME)
+        
+        for i in self._fworkers:
+            if self._fworkers[i]._running:
+                self._fworkers[i].close()
+    
+    def fetch(self, url, index, object_id):
+        self._queue.append((url, index, object_id))
+    
+    def close(self):
+        self._running = False
+
+    def _hook(self, index):
+        self._fworkers[index].close()
+        self._fworkers.pop(index)
+
+
+class FWorker(Thread):
+
+    '''Fetches data about an added download item instantly after they have been added. Similar to Worker.
+    '''
+
+    WAIT_TIME = 0.1
+
+    def __init__(self, data_hook, fetcher_hook, youtubedl, url, index, object_id):
+        super(FWorker, self).__init__()
+        self._youtubedl = youtubedl
+        self._running = True
+        self._url = url
+        self._index = index
+        self._object_id = object_id
+
+        self._options = [
+            '-i',
+            '-j',
+            '--no-playlist',
+            '--ignore-config',
+            '--hls-prefer-native'
+        ]
+
+        self._entries = 0
+
+        self._data_hook = data_hook
+        self._fetcher_hook = fetcher_hook
+        self._downloader = YoutubeDLDownloader(self._youtubedl, self._hook)
+
+        self.start() # Calls run()
+
+    def run(self):
+        while self._running:
+            if self._url is not None:
+                ret_code = self._downloader.raw_download(self._url, self._options, self._last_hook)
+            time.sleep(self.WAIT_TIME)
+
+        self._downloader.stop()
+
+    def close(self):
+        self._running = False
+
+    def extract(self, data):
+        '''Extracts data from the youtubedl data.
+        '''
+
+        title = data.get("title")
+        thumb = None
+        fsize = data.get("filesize") or data.get("filesize_approx")
+        url = data.get("webpage_url")
+
+        try: # Could replace urlopen with youtube-dl --write-thumbnail --skip-download
+            thumb_url = data["thumbnail"]
+            filename = "ydlg-thumbnail"
+            dest = os.path.join(tempfile.gettempdir(), filename)
+
+            stream = urlopen(thumb_url, timeout=10)
+            with open(dest, 'wb') as dest_file:
+                dest_file.write(stream.read())
+            
+            img = Image.open(dest).resize(THUMBNAIL_SIZE)
+            newdest = os.path.join(tempfile.gettempdir(), "filename.png")
+            img.save(newdest)
+
+            thumb = Bitmap(newdest)
+        except (HTTPError, URLError, IOError) as error:
+            print error
+        
+        return {
+            'url': url,
+            'filename': title,
+            'thumb': thumb,
+            'filesize': fsize
+        }
+
+    def _hook(self, data): #TODO: Add error catching to this
+        self._entries += 1
+        self._data_hook(self.extract(json.loads(data)), self._index, self._object_id, self._entries == 1)
+    
+    def _last_hook(self):
+        #if self._entries > 1:
+        #    self._data_hook(None, self._index, self._object_id, True) # Tell mainframe to delete playlist item
+        self._fetcher_hook(self._index)
+        
+
 

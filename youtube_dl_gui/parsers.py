@@ -7,7 +7,7 @@ from __future__ import unicode_literals
 
 import os.path
 
-from .utils import (
+from utils import (
     remove_shortcuts,
     to_string
 )
@@ -97,7 +97,7 @@ class OptionsParser(object):
             OptionHolder('save_path', '-o', ''),
             OptionHolder('embed_subs', '--embed-subs', False, ['write_auto_subs', 'write_subs']),
             OptionHolder('to_audio', '-x', False),
-            OptionHolder('audio_format', '--audio-format', ''),
+            OptionHolder('audio_format', '--audio-format', 'best'),
             OptionHolder('video_format', '-f', '0'),
             OptionHolder('subs_lang', '--sub-lang', '', ['write_subs']),
             OptionHolder('audio_quality', '--audio-quality', '5', ['to_audio']),
@@ -122,7 +122,7 @@ class OptionsParser(object):
 
         """
         # REFACTOR
-        options_list = ['--newline']
+        options_list = ['--newline', '--no-playlist']
 
         # Create a copy of options_dictionary
         # We don't want to edit the original options dictionary
@@ -135,43 +135,14 @@ class OptionsParser(object):
 
         # Parse basic youtube-dl command line options
         for option in self._ydl_options:
-            #NOTE Special case should be removed
-            if option.name == "to_audio":
-                if options_dict["audio_format"] == "":
-                    value = options_dict[option.name]
-
-                    if value != option.default_value:
-                        options_list.append(option.flag)
-            elif option.name == "audio_format":
+            if (option.name == "to_audio" or option.name == "audio_format") and options_dict["to_audio"]: # We are converting to audio
                 value = options_dict[option.name]
 
                 if value != option.default_value:
-                    options_list.append("-x")
                     options_list.append(option.flag)
-                    options_list.append(to_string(value))
 
-                    #NOTE Temp fix
-                    # If current 'audio_quality' is not the default one ('5')
-                    # then append the audio quality flag and value to the
-                    # options list
-                    if options_dict["audio_quality"] != "5":
-                        options_list.append("--audio-quality")
-                        options_list.append(to_string(options_dict["audio_quality"]))
-
-            elif option.name == "audio_quality":
-                # If the '--audio-quality' is not already in the options list
-                # from the above branch then follow the standard procedure.
-                # We don't have to worry for the sequence in which the code
-                # will be executed since the 'audio_quality' option is placed
-                # after the 'audio_format' option in the self._ydl_options list
-                if option.flag not in options_list:
-                    if option.check_requirements(options_dict):
-                        value = options_dict[option.name]
-
-                        if value != option.default_value:
-                            options_list.append(option.flag)
-                            options_list.append(to_string(value))
-
+                    if not option.is_boolean():
+                        options_list.append(to_string(value))
             elif option.check_requirements(options_dict):
                 value = options_dict[option.name]
 

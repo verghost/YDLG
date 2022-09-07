@@ -10,17 +10,17 @@ Note:
 
 from __future__ import unicode_literals
 
-__author__ = 'Sotiris Papadopoulos'
-__contact__ = 'ytubedlg@gmail.com'
-__projecturl__ = 'https://mrs0m30n3.github.io/youtube-dl-gui/'
+__author__ = 'Originally Written by Sotiris Papadopoulos\nUpdated by Verghost'
+__contact__ = ''
+__projecturl__ = ''
 
-__appname__ = 'Youtube-DLG'
+__appname__ = 'YDLG'
 __license__ = 'UNLICENSE'
 
 __description__ = 'Youtube-dl GUI'
 
-__descriptionfull__ = '''A cross platform front-end GUI of the popular
-youtube-dl written in wxPython'''
+__descriptionfull__ = '''Updated version of the cross platform front-end GUI of the popular
+youtube-dl.'''
 
 __licensefull__ = '''
 This is free and unencumbered software released into the public domain.

@@ -1,14 +1,13 @@
-[![Donations Badge](https://yourdonation.rocks/images/badge.svg)](https://mrs0m30n3.github.io/youtube-dl-gui/donate.html)
-
-# youtube-dlG
-A cross platform front-end GUI of the popular [youtube-dl](https://rg3.github.io/youtube-dl/) media downloader written in wxPython. [Supported sites](https://rg3.github.io/youtube-dl/supportedsites.html)
+# YDLG
+A cross platform front-end GUI of the popular [youtube-dl](https://rg3.github.io/youtube-dl/) media downloader written in wxPython. Updated version of [youtube-dlg](https://github.com/MrS0m30n3/youtube-dl-gui).
 
 ## Screenshots
-![youtube-dl-gui main window](https://raw.githubusercontent.com/MrS0m30n3/youtube-dl-gui/gh-pages/images/ydlg_ui.gif)
+
 
 ## Requirements
 * [Python 2.7.3+](https://www.python.org/downloads)
 * [wxPython 3](https://wxpython.org/download.php)
+* [Validators](https://validators.readthedocs.io/en/latest/) To validate URLs
 * [TwoDict](https://pypi.python.org/pypi/twodict)
 * [GNU gettext](https://www.gnu.org/software/gettext/) (to build the package)
 * [FFmpeg](https://ffmpeg.org/download.html) (optional, to post process video files)

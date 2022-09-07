@@ -8,7 +8,7 @@ from __future__ import unicode_literals
 import os
 import json
 
-from .utils import (
+from utils import (
     os_path_expanduser,
     os_path_exists,
     encode_tuple,
@@ -17,7 +17,7 @@ from .utils import (
     get_default_lang
 )
 
-from .formats import (
+from formats import (
     OUTPUT_FORMATS,
     FORMATS
 )
@@ -190,6 +190,8 @@ class OptionsManager(object):
 
             workers_number (int): Number of download workers that download manager
                 will spawn. Must be greater than zero.
+            
+            max_fworkers (int): Maximum number of fworkers that the fetcher will spawn.
 
             locale_name (string): Locale name (e.g. ru_RU).
 
@@ -232,24 +234,27 @@ class OptionsManager(object):
 
             add_metadata (boolean): When True will write metadata to file.
 
+            ydlg_last_update (string): Date of last update of YDLG.
+
+            ytdl_last_update (string): Date of last update of youtube-dl.
+            
             disable_update (boolean): When True the update process will be disabled.
 
         """
         #REFACTOR Remove old options & check options validation
         self.options = {
-            'save_path': os_path_expanduser('~'),
+            'save_path': os.path.join(os_path_expanduser('~'), "Downloads"),
             'save_path_dirs': [
-                os_path_expanduser('~'),
                 os.path.join(os_path_expanduser('~'), "Downloads"),
                 os.path.join(os_path_expanduser('~'), "Desktop"),
                 os.path.join(os_path_expanduser('~'), "Videos"),
                 os.path.join(os_path_expanduser('~'), "Music"),
             ],
-            'video_format': '0',
+            'video_format': 'mp4',
             'second_video_format': '0',
             'to_audio': False,
             'keep_video': False,
-            'audio_format': '',
+            'audio_format': 'best',
             'audio_quality': '5',
             'restrict_filenames': False,
             'output_format': 1,
@@ -285,11 +290,15 @@ class OptionsManager(object):
             'enable_log': True,
             'log_time': True,
             'workers_number': 3,
+            'max_fworkers': 3,
             'locale_name': get_default_lang(),
             'main_win_size': (740, 490),
             'opts_win_size': (640, 490),
-            'selected_video_formats': ['webm', 'mp4'],
-            'selected_audio_formats': ['mp3', 'm4a', 'vorbis'],
+            'selected_video_formats': ['17', '36', '5', '34', '35', '43', '44', '45',
+            '46', '18', '22', '37', '38', '160', '133', '134', '135', '136','137',
+            '264', '138', '242', '243', '244', '247', '248', '271', '272', '82',
+            '83', '84', '85', '100', '101', '102', '139', '140', '141', '171', '172'],
+            'selected_audio_formats': ['mp3', 'wav', 'aac', 'm4a', 'vorbis', 'opus', 'flac'],
             'selected_format': '0',
             'youtube_dl_debug': False,
             'ignore_config': True,
@@ -300,6 +309,8 @@ class OptionsManager(object):
             'nomtime': False,
             'embed_thumbnail': False,
             'add_metadata': False,
+            'ydlg_last_update': '00-00-00',
+            'ytdl_last_update': '00-00-00',
             'disable_update': False
         }
 

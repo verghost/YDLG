@@ -2,7 +2,7 @@
 
 import gettext
 
-from .utils import TwoWayOrderedDict as tdict
+from utils import TwoWayOrderedDict as tdict
 
 
 OUTPUT_FORMATS = tdict([
